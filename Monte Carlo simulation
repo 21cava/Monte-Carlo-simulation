@@ -1,0 +1,89 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+tickers = ['UCG.MI', 'ISP.MI', 'ENEL.MI', 'ENI.MI', 'RACE.MI']
+start_date = '2020-01-01'
+risk_free_rate = 0.0357
+
+print(f"Importing data for: {tickers}")
+
+data = yf.download(tickers, start=start_date, auto_adjust=True)['Close']
+
+print("\n--- STOCK INFO ---")
+for ticker in tickers:
+    try:
+        t = yf.Ticker(ticker) 
+
+        long_name = t.info.get('longName', ticker)
+        sector = t.info.get('sector', 'N/A')
+        price = t.info.get('currentPrice', 'N/A')
+        
+        print(f"Ticker:  {ticker}")
+        print(f"Name: {long_name}")
+        print(f"Sector: {sector}")
+        print(f"Price:  {price} €")
+        print("----------------------------------")
+    except Exception as e:
+        print(f"No info for {ticker}: {e}")
+
+# --- MATH ---
+log_returns = np.log(data / data.shift(1))
+cov_matrix = log_returns.cov() * 252
+
+# --- MONTE CARLO SIMULATION ---
+num_portfolios = 10000
+all_weights = np.zeros((num_portfolios, len(tickers)))
+ret_arr = np.zeros(num_portfolios)
+vol_arr = np.zeros(num_portfolios)
+sharpe_arr = np.zeros(num_portfolios)
+
+print(f"Running the simulation for {num_portfolios} portfolios...")
+
+for i in range(num_portfolios):
+    weights = np.array(np.random.random(len(tickers)))
+    weights = weights / np.sum(weights)
+    
+    all_weights[i, :] = weights
+
+    ret_arr[i] = np.sum((log_returns.mean() * weights) * 252)
+
+    vol_arr[i] = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+
+    sharpe_arr[i] = (ret_arr[i] - risk_free_rate) / vol_arr[i]
+
+print("Simulation completed.")
+
+# --- RESULTS ---
+max_sharpe_idx = sharpe_arr.argmax()
+max_sharpe_ret = ret_arr[max_sharpe_idx]
+max_sharpe_vol = vol_arr[max_sharpe_idx]
+
+print("\n --------------------------------")
+print(" BEST PORTFOLIO ALLOCATION")
+print("--------------------------------")
+
+print(f"Return: {max_sharpe_ret*100:.2f}%")
+print(f"Volatility: {max_sharpe_vol*100:.2f}%")
+print(f"Sharpe Ratio: {sharpe_arr[max_sharpe_idx]:.2f}")
+print("--------------------------------")
+
+best_weights = all_weights[max_sharpe_idx, :]
+for ticker, weight in zip(tickers, best_weights):
+    print(f"Allocation weight for {ticker}: {weight*100:.2f}%")
+
+# --- PLOTTING ---
+plt.figure(figsize=(12, 8))
+
+plt.scatter(vol_arr, ret_arr, c=sharpe_arr, cmap='viridis', s=10, alpha=0.5)
+plt.colorbar(label='Sharpe Ratio')
+
+plt.scatter(max_sharpe_vol, max_sharpe_ret, c='red', s=100, edgecolors='black', label='Max Sharpe')
+
+plt.title(f'Markowitz Efficient Frontier ({num_portfolios} simulations)')
+plt.xlabel('Volatility Yearly (Risk)')
+plt.ylabel('Expected Return Yearly')
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.show()
